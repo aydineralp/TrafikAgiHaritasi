@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <title>OpenLayers ile İzmir Trafik Ağı Haritası</title>
+  <!-- OpenLayers CSS -->
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/ol@latest/ol.css"
+    type="text/css"
+  />
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Arial', sans-serif;
+      background: linear-gradient(135deg, #00c6ff, #0072ff, #00ff88, #ffe259);
+      background-size: 300% 300%;
+      animation: gradientShift 8s ease infinite;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      cursor: url('./cursor.png'), auto;
+    }
+
+    @keyframes gradientShift {
+      0% {
+        background-position: 0% 50%;
+      }
+      50% {
+        background-position: 100% 50%;
+      }
+      100% {
+        background-position: 0% 50%;
+      }
+    }
+
+    h1 {
+      margin: 20px 0;
+      font-size: 2.5rem;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    #map {
+      width: 90%;
+      max-width: 1200px;
+      height: 500px;
+      border: 2px solid #fff;
+      border-radius: 10px;
+      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    #info {
+      margin-top: 15px;
+      text-align: center;
+      width: 90%;
+      max-width: 1200px;
+    }
+
+    #startPoint, #midPoint, #endPoint {
+      margin: 10px 0;
+      font-weight: bold;
+      color: white;
+      font-size: 1rem;
+      text-align: center;
+    }
+
+    #distanceInfo {
+      margin-top: 10px;
+      font-weight: bold;
+      color: #fff;
+      font-size: 1.2rem;
+    }
+
+    #clearBtn {
+      margin-top: 10px;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: bold;
+      background: linear-gradient(to right, #ff416c, #ff4b2b);
+      color: white;
+      border: none;
+      border-radius: 25px;
+      box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    #clearBtn:hover {
+      transform: scale(1.1);
+      box-shadow: 0px 6px 10px rgba(0, 0, 0, 0.4);
+    }
+  </style>
+</head>
+<body>
+  <h1>İzmir Trafik Haritası</h1>
+  <div id="map"></div>
+  <div id="info">
+    <div id="startPoint">Başlangıç Noktası: Henüz seçilmedi</div>
+    <div id="midPoint">Orta Nokta: Henüz seçilmedi</div>
+    <div id="endPoint">Bitiş Noktası: Henüz seçilmedi</div>
+    <button id="clearBtn">Noktaları Temizle</button>
+    <div id="distanceInfo"></div>
+  </div>
+
+  <!-- OpenLayers JS -->
+  <script src="https://cdn.jsdelivr.net/npm/ol@latest/dist/ol.js"></script>
+
+  <script>
+    const izmirCenter = ol.proj.fromLonLat([27.142826, 38.423733]);
+
+    const osmLayer = new ol.layer.Tile({
+      source: new ol.source.OSM(),
+    });
+
+    const pointSource = new ol.source.Vector();
+    const pointLayer = new ol.layer.Vector({
+      source: pointSource,
+      style: function (feature) {
+        const styles = {
+          0: new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 10,
+              fill: new ol.style.Fill({ color: 'red' }),
+              stroke: new ol.style.Stroke({ color: 'white', width: 2 }),
+            }),
+          }),
+          1: new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 10,
+              fill: new ol.style.Fill({ color: 'orange' }),
+              stroke: new ol.style.Stroke({ color: 'white', width: 2 }),
+            }),
+          }),
+          2: new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 10,
+              fill: new ol.style.Fill({ color: 'yellow' }),
+              stroke: new ol.style.Stroke({ color: 'white', width: 2 }),
+            }),
+          }),
+        };
+
+        return styles[feature.get('index')] || styles[0];
+      },
+    });
+
+    const routeSource = new ol.source.Vector();
+    const routeLayer = new ol.layer.Vector({
+      source: routeSource,
+      style: new ol.style.Style({
+        stroke: new ol.style.Stroke({
+          color: 'blue',
+          width: 4,
+        }),
+      }),
+    });
+
+    const redRouteSource = new ol.source.Vector();
+    const redRouteLayer = new ol.layer.Vector({
+      source: redRouteSource,
+      style: new ol.style.Style({
+        stroke: new ol.style.Stroke({
+          color: 'red', // Kırmızı çizgi
+          width: 4,
+        }),
+      }),
+    });
+
+    const map = new ol.Map({
+      target: 'map',
+      layers: [osmLayer, pointLayer, routeLayer, redRouteLayer],
+      view: new ol.View({
+        center: izmirCenter,
+        zoom: 12,
+      }),
+    });
+
+    let selectedCoords = [];
+
+    map.on('click', function (evt) {
+      if (selectedCoords.length >= 3) {
+        alert('Yeni bir rota seçmek için önce "Noktaları Temizle" butonuna basın.');
+        return;
+      }
+
+      const clickedCoordinate = ol.proj.toLonLat(evt.coordinate);
+      const feature = new ol.Feature({
+        geometry: new ol.geom.Point(evt.coordinate),
+        index: selectedCoords.length,
+      });
+      pointSource.addFeature(feature);
+
+      selectedCoords.push(clickedCoordinate);
+
+      if (selectedCoords.length === 1) {
+        document.getElementById('startPoint').textContent =
+          `Başlangıç Noktası: ${clickedCoordinate[0].toFixed(4)}, ${clickedCoordinate[1].toFixed(4)}`;
+      } else if (selectedCoords.length === 2) {
+        document.getElementById('midPoint').textContent =
+          `Orta Nokta: ${clickedCoordinate[0].toFixed(4)}, ${clickedCoordinate[1].toFixed(4)}`;
+      } else if (selectedCoords.length === 3) {
+        document.getElementById('endPoint').textContent =
+          `Bitiş Noktası: ${clickedCoordinate[0].toFixed(4)}, ${clickedCoordinate[1].toFixed(4)}`;
+        calculateRoute(selectedCoords);
+      }
+    });
+
+    async function calculateRoute(coords) {
+      const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coords[0][0]},${coords[0][1]};${coords[1][0]},${coords[1][1]};${coords[2][0]},${coords[2][1]}?overview=full&geometries=geojson`;
+
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          const geometry = new ol.geom.LineString(route.geometry.coordinates);
+
+          geometry.applyTransform(function (flatCoordinates, flatCoordinates2, stride) {
+            for (let i = 0; i < flatCoordinates.length; i += stride) {
+              const lon = flatCoordinates[i];
+              const lat = flatCoordinates[i + 1];
+              const transformed = ol.proj.fromLonLat([lon, lat]);
+              flatCoordinates[i] = transformed[0];
+              flatCoordinates[i + 1] = transformed[1];
+            }
+          });
+
+          const routeFeature = new ol.Feature({
+            geometry: geometry,
+          });
+          routeSource.addFeature(routeFeature);
+
+          // 3. ve 1. nokta arasındaki rota
+          const urlLastToFirst = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coords[2][0]},${coords[2][1]};${coords[0][0]},${coords[0][1]}?overview=full&geometries=geojson`;
+          const responseLastToFirst = await fetch(urlLastToFirst);
+          const dataLastToFirst = await responseLastToFirst.json();
+
+          if (dataLastToFirst.routes && dataLastToFirst.routes.length > 0) {
+            const routeLastToFirst = dataLastToFirst.routes[0];
+            const geometryLastToFirst = new ol.geom.LineString(routeLastToFirst.geometry.coordinates);
+
+            geometryLastToFirst.applyTransform(function (flatCoordinates, flatCoordinates2, stride) {
+              for (let i = 0; i < flatCoordinates.length; i += stride) {
+                const lon = flatCoordinates[i];
+                const lat = flatCoordinates[i + 1];
+                const transformed = ol.proj.fromLonLat([lon, lat]);
+                flatCoordinates[i] = transformed[0];
+                flatCoordinates[i + 1] = transformed[1];
+              }
+            });
+
+            const routeLastToFirstFeature = new ol.Feature({
+              geometry: geometryLastToFirst,
+            });
+            redRouteSource.addFeature(routeLastToFirstFeature); // Kırmızı rota ekleniyor
+          }
+
+          const distance = route.distance;
+          const distanceKm = (distance / 1000).toFixed(2);
+          document.getElementById('distanceInfo').textContent =
+            `Üç nokta arasında toplam mesafe: ${distanceKm} km`;
+        } else {
+          document.getElementById('distanceInfo').textContent = 'Rota bulunamadı.';
+        }
+      } catch (error) {
+        console.error('Rota hesaplama hatası:', error);
+        document.getElementById('distanceInfo').textContent =
+          'Rota hesaplanırken bir hata oluştu.';
+      }
+    }
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      selectedCoords = [];
+      pointSource.clear();
+      routeSource.clear();
+      redRouteSource.clear(); // Kırmızı rotayı da temizle
+      document.getElementById('startPoint').textContent = 'Başlangıç Noktası: Henüz seçilmedi';
+      document.getElementById('midPoint').textContent = 'Orta Nokta: Henüz seçilmedi';
+      document.getElementById('endPoint').textContent = 'Bitiş Noktası: Henüz seçilmedi';
+      document.getElementById('distanceInfo').textContent = '';
+    });
+  </script>
+</body>
+</html>
